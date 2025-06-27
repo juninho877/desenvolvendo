@@ -8,7 +8,7 @@ class Database {
     private $host = 'localhost';
     private $dbname = 'teste';
     private $username = 'teste';
-    private $password = '3gh7a~31L';
+    private $password = '#D_p2ahElBb7zn6u';
     private $charset = 'utf8mb4';
     
     private function __construct() {
