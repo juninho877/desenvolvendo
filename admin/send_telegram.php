@@ -6,6 +6,7 @@ if (!isset($_SESSION["usuario"])) {
 }
 
 require_once 'classes/TelegramSettings.php';
+require_once 'classes/TelegramService.php';
 
 // Verificar se os parâmetros necessários foram fornecidos
 if (!isset($_GET['banner_path']) || !isset($_GET['banner_name'])) {
@@ -37,61 +38,35 @@ if (!isset($_GET['banner_path']) || !isset($_GET['banner_name'])) {
 
 $bannerPath = urldecode($_GET['banner_path']);
 $bannerName = urldecode($_GET['banner_name']);
+$contentName = isset($_GET['content_name']) ? urldecode($_GET['content_name']) : pathinfo($bannerName, PATHINFO_FILENAME);
+$contentType = isset($_GET['type']) ? urldecode($_GET['type']) : 'filme';
 $userId = $_SESSION['user_id'];
 
-// Inicializar classe de configurações do Telegram
-$telegramSettings = new TelegramSettings();
+// Inicializar serviço do Telegram
+$telegramService = new TelegramService();
 
-// Verificar se o usuário tem configurações do Telegram
-$settings = $telegramSettings->getSettings($userId);
-$hasSettings = $settings !== false;
+// Processar envio
+$result = ['success' => false, 'message' => 'Erro ao processar solicitação'];
 
-// Processar envio se houver configurações
-$result = ['success' => false, 'message' => 'Configurações do Telegram não encontradas'];
-
-if ($hasSettings && file_exists($bannerPath)) {
-    $botToken = $settings['bot_token'];
-    $chatId = $settings['chat_id'];
-    
-    // Preparar legenda
-    $caption = "🎬 Banner: " . pathinfo($bannerName, PATHINFO_FILENAME) . "\n";
-    $caption .= "📅 Gerado em: " . date('d/m/Y H:i') . "\n";
-    $caption .= "🎨 FutBanner";
-    
-    // Enviar para o Telegram
-    $url = "https://api.telegram.org/bot{$botToken}/sendPhoto";
-    
-    $postFields = [
-        'chat_id' => $chatId,
-        'photo' => new CURLFile($bannerPath),
-        'caption' => $caption,
-        'parse_mode' => 'HTML'
-    ];
-    
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL => $url,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $postFields,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_USERAGENT => 'FutBanner/1.0'
-    ]);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    if ($response !== false) {
-        $data = json_decode($response, true);
-        
-        if ($data && isset($data['ok']) && $data['ok'] === true) {
-            $result = ['success' => true, 'message' => 'Banner enviado com sucesso para o Telegram'];
-        } else {
-            $result = ['success' => false, 'message' => 'Erro ao enviar para o Telegram: ' . ($data['description'] ?? 'Erro desconhecido')];
-        }
+if (file_exists($bannerPath)) {
+    // Determinar se é banner de filme/série ou de futebol
+    if (isset($_GET['content_name']) || strpos($bannerName, 'banner_tema') !== false) {
+        // Banner de filme/série
+        $result = $telegramService->sendMovieSeriesBanner($userId, $bannerPath, $contentName, $contentType);
     } else {
-        $result = ['success' => false, 'message' => 'Erro na conexão com a API do Telegram'];
+        // Banner de futebol (legado - agora usa send_telegram_banners.php)
+        $caption = "🏆 Banner: " . pathinfo($bannerName, PATHINFO_FILENAME) . "\n";
+        $caption .= "📅 Gerado em: " . date('d/m/Y H:i') . "\n";
+        $caption .= "🎨 FutBanner";
+        
+        $result = $telegramService->sendImageAlbum($userId, [$bannerPath], $caption);
+    }
+    
+    // Se o envio foi bem-sucedido, remover o arquivo temporário
+    if ($result['success'] && isset($_SESSION['current_banner_temp_path']) && $_SESSION['current_banner_temp_path'] === $bannerPath) {
+        unlink($bannerPath);
+        unset($_SESSION['current_banner_temp_path']);
+        unset($_SESSION['current_banner_original_name']);
     }
 }
 
@@ -132,7 +107,7 @@ include "includes/header.php";
                     <?php echo $result['message']; ?>
                 </p>
                 
-                <?php if (!$hasSettings): ?>
+                <?php if (!$result['success'] && strpos($result['message'], 'Configurações do Telegram não encontradas') !== false): ?>
                 <div class="alert alert-warning mt-4">
                     <i class="fas fa-info-circle"></i>
                     <div>
@@ -147,7 +122,7 @@ include "includes/header.php";
         </div>
         
         <div class="actions-container mt-6">
-            <?php if (!$hasSettings): ?>
+            <?php if (!$result['success'] && strpos($result['message'], 'Configurações do Telegram não encontradas') !== false): ?>
             <a href="telegram.php" class="btn btn-primary">
                 <i class="fab fa-telegram"></i>
                 Configurar Telegram

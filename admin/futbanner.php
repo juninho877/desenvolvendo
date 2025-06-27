@@ -66,6 +66,12 @@ if ($json_url) {
 $jogosPorBanner = 5;
 $gruposDeJogos = array_chunk(array_keys($jogos), $jogosPorBanner);
 
+// Verificar se o usuário tem configurações do Telegram
+require_once 'classes/TelegramSettings.php';
+$telegramSettings = new TelegramSettings();
+$userId = $_SESSION['user_id'];
+$hasTelegramSettings = $telegramSettings->hasSettings($userId);
+
 if (isset($_GET['banner'])) {
     // Tela de visualização dos banners
     $tipo_banner = $_GET['banner'];
@@ -141,10 +147,17 @@ if (isset($_GET['banner'])) {
             <i class="fas fa-download"></i>
             Baixar Todos (ZIP)
         </a>
-        <button id="sendTelegramBtn" class="btn btn-primary">
+        <?php if ($hasTelegramSettings): ?>
+        <button id="sendTelegramBtn" class="btn btn-primary" data-banner-type="football_<?php echo $tipo_banner; ?>">
             <i class="fab fa-telegram"></i>
             Enviar para Telegram
         </button>
+        <?php else: ?>
+        <a href="telegram.php" class="btn btn-primary">
+            <i class="fab fa-telegram"></i>
+            Configurar Telegram
+        </a>
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 
@@ -998,81 +1011,6 @@ function setupNavigationInterception() {
     });
 }
 
-// Enviar banners para o Telegram
-function sendBannersToTelegram() {
-    // Determinar o tipo de banner baseado na URL atual
-    const urlParams = new URLSearchParams(window.location.search);
-    const bannerType = urlParams.get('banner');
-    
-    let bannerTypeCode;
-    switch (bannerType) {
-        case '1': bannerTypeCode = 'football_1'; break;
-        case '2': bannerTypeCode = 'football_2'; break;
-        case '3': bannerTypeCode = 'football_3'; break;
-        default: 
-            Swal.fire({
-                title: 'Erro',
-                text: 'Tipo de banner inválido',
-                icon: 'error',
-                background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
-                color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b'
-            });
-            return;
-    }
-    
-    // Mostrar loading
-    Swal.fire({
-        title: 'Enviando para Telegram',
-        text: 'Gerando e enviando banners...',
-        icon: 'info',
-        allowOutsideClick: false,
-        showConfirmButton: false,
-        background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
-        color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
-    
-    // Enviar requisição para o endpoint
-    fetch('send_telegram_banners.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `banner_type=${bannerTypeCode}`
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            Swal.fire({
-                title: 'Sucesso!',
-                text: data.message,
-                icon: 'success',
-                background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
-                color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b'
-            });
-        } else {
-            Swal.fire({
-                title: 'Erro',
-                text: data.message,
-                icon: 'error',
-                background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
-                color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b'
-            });
-        }
-    })
-    .catch(error => {
-        Swal.fire({
-            title: 'Erro',
-            text: 'Erro ao enviar para o Telegram: ' + error.message,
-            icon: 'error',
-            background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
-            color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b'
-        });
-    });
-}
-
 // Carregar banners quando a página estiver pronta
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Iniciando carregamento dos banners...');
@@ -1107,14 +1045,88 @@ document.addEventListener('DOMContentLoaded', function() {
             // Adicionar à lista de timeouts ativos
             activeTimeouts.push(timeoutId);
         });
-        
-        // Configurar botão de envio para Telegram
-        const sendTelegramBtn = document.getElementById('sendTelegramBtn');
-        if (sendTelegramBtn) {
-            sendTelegramBtn.addEventListener('click', sendBannersToTelegram);
-        }
     <?php endif; ?>
+    
+    // Configurar botão de envio para Telegram
+    const sendTelegramBtn = document.getElementById('sendTelegramBtn');
+    if (sendTelegramBtn) {
+        sendTelegramBtn.addEventListener('click', function() {
+            const bannerType = this.getAttribute('data-banner-type');
+            
+            Swal.fire({
+                title: 'Enviar para Telegram?',
+                text: 'Todos os banners serão enviados para o seu chat configurado no Telegram.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Sim, enviar',
+                cancelButtonText: 'Cancelar',
+                background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
+                color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
+                confirmButtonColor: '#3b82f6'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    sendBannersToTelegram(bannerType);
+                }
+            });
+        });
+    }
 });
+
+// Função para enviar banners para o Telegram
+function sendBannersToTelegram(bannerType) {
+    Swal.fire({
+        title: 'Enviando Banners',
+        text: 'Aguarde enquanto enviamos os banners para o Telegram...',
+        icon: 'info',
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
+        color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+    
+    fetch('send_telegram_banners.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `banner_type=${bannerType}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                title: 'Sucesso!',
+                text: data.message,
+                icon: 'success',
+                background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
+                color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
+                confirmButtonColor: '#3b82f6'
+            });
+        } else {
+            Swal.fire({
+                title: 'Erro!',
+                text: data.message,
+                icon: 'error',
+                background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
+                color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
+                confirmButtonColor: '#ef4444'
+            });
+        }
+    })
+    .catch(error => {
+        Swal.fire({
+            title: 'Erro!',
+            text: 'Erro na comunicação com o servidor: ' + error.message,
+            icon: 'error',
+            background: document.body.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
+            color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
+            confirmButtonColor: '#ef4444'
+        });
+    });
+}
 
 // Expor função globalmente
 window.retryBanner = retryBanner;

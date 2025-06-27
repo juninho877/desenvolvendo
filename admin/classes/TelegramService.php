@@ -75,7 +75,8 @@ class TelegramService {
             $postFields = [
                 'chat_id' => $chatId,
                 'photo' => new CURLFile($imagePath),
-                'caption' => $caption
+                'caption' => $caption,
+                'parse_mode' => 'HTML'
             ];
             
             $ch = curl_init();
@@ -230,10 +231,29 @@ class TelegramService {
                 return ['success' => false, 'message' => 'Erro ao gerar banners'];
             }
             
-            // Preparar legenda
+            // Obter configurações do usuário
+            $settings = $this->telegramSettings->getSettings($userId);
+            
+            // Preparar legenda personalizada ou usar padrão
             $caption = "🏆 Banners de Futebol - " . date('d/m/Y') . "\n";
-            $caption .= "📊 " . count($jogos) . " jogos de hoje\n";
-            $caption .= "🎨 Gerado pelo FutBanner";
+            
+            if (!empty($settings['football_message'])) {
+                // Substituir variáveis na mensagem personalizada
+                $customMessage = $settings['football_message'];
+                $data = date('d/m/Y');
+                $hora = date('H:i');
+                $jogosCount = count($jogos);
+                
+                $customMessage = str_replace('$data', $data, $customMessage);
+                $customMessage = str_replace('$hora', $hora, $customMessage);
+                $customMessage = str_replace('$jogos', $jogosCount, $customMessage);
+                
+                $caption = $customMessage;
+            } else {
+                // Mensagem padrão
+                $caption .= "📊 " . count($jogos) . " jogos de hoje\n";
+                $caption .= "🎨 Gerado pelo FutBanner";
+            }
             
             // Enviar para o Telegram
             $result = $this->sendImageAlbum($userId, $imagePaths, $caption);
@@ -250,6 +270,57 @@ class TelegramService {
         } catch (Exception $e) {
             error_log("Erro em generateAndSendBanners: " . $e->getMessage());
             return ['success' => false, 'message' => 'Erro ao gerar e enviar banners: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Enviar banner de filme/série para o Telegram
+     * @param int $userId ID do usuário
+     * @param string $bannerPath Caminho do arquivo do banner
+     * @param string $contentName Nome do filme ou série
+     * @param string $contentType Tipo do conteúdo (filme ou série)
+     * @return array Resultado da operação
+     */
+    public function sendMovieSeriesBanner($userId, $bannerPath, $contentName, $contentType = 'filme') {
+        try {
+            if (!file_exists($bannerPath)) {
+                return ['success' => false, 'message' => 'Arquivo do banner não encontrado'];
+            }
+            
+            // Obter configurações do usuário
+            $settings = $this->telegramSettings->getSettings($userId);
+            if (!$settings) {
+                return ['success' => false, 'message' => 'Configurações do Telegram não encontradas. Configure primeiro em Telegram > Configurações.'];
+            }
+            
+            // Preparar legenda personalizada ou usar padrão
+            $caption = "🎬 Banner: " . $contentName . "\n";
+            
+            if (!empty($settings['movie_series_message'])) {
+                // Substituir variáveis na mensagem personalizada
+                $customMessage = $settings['movie_series_message'];
+                $data = date('d/m/Y');
+                $hora = date('H:i');
+                
+                $customMessage = str_replace('$data', $data, $customMessage);
+                $customMessage = str_replace('$hora', $hora, $customMessage);
+                $customMessage = str_replace('$nomedofilme', $contentName, $customMessage);
+                
+                $caption = $customMessage;
+            } else {
+                // Mensagem padrão
+                $caption .= "📅 Gerado em: " . date('d/m/Y H:i') . "\n";
+                $caption .= "🎨 FutBanner";
+            }
+            
+            // Enviar para o Telegram
+            $result = $this->sendSinglePhoto($settings['bot_token'], $settings['chat_id'], $bannerPath, $caption);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            error_log("Erro em sendMovieSeriesBanner: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Erro ao enviar banner: ' . $e->getMessage()];
         }
     }
 }

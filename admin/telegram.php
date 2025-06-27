@@ -19,8 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'save_settings':
                 $botToken = trim($_POST['bot_token']);
                 $chatId = trim($_POST['chat_id']);
+                $footballMessage = trim($_POST['football_message'] ?? '');
+                $movieSeriesMessage = trim($_POST['movie_series_message'] ?? '');
                 
-                $result = $telegramSettings->saveSettings($userId, $botToken, $chatId);
+                $result = $telegramSettings->saveSettings($userId, $botToken, $chatId, $footballMessage, $movieSeriesMessage);
                 $message = $result['message'];
                 $messageType = $result['success'] ? 'success' : 'error';
                 break;
@@ -131,6 +133,36 @@ include "includes/header.php";
                             <i class="fas fa-search"></i>
                             Verificar Chat
                         </button>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="football_message" class="form-label">
+                            <i class="fas fa-futbol mr-2"></i>
+                            Mensagem para Banners de Futebol
+                        </label>
+                        <textarea id="football_message" name="football_message" class="form-input" rows="4" 
+                                  placeholder="Mensagem personalizada para banners de futebol"><?php echo htmlspecialchars($currentSettings['football_message'] ?? ''); ?></textarea>
+                        <p class="text-xs text-muted mt-1">
+                            Variáveis disponíveis: $data (data atual), $hora (hora atual), $jogos (quantidade de jogos)
+                        </p>
+                        <p class="text-xs text-muted">
+                            Deixe em branco para usar a mensagem padrão
+                        </p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="movie_series_message" class="form-label">
+                            <i class="fas fa-film mr-2"></i>
+                            Mensagem para Banners de Filmes/Séries
+                        </label>
+                        <textarea id="movie_series_message" name="movie_series_message" class="form-input" rows="4" 
+                                  placeholder="Mensagem personalizada para banners de filmes e séries"><?php echo htmlspecialchars($currentSettings['movie_series_message'] ?? ''); ?></textarea>
+                        <p class="text-xs text-muted mt-1">
+                            Variáveis disponíveis: $data (data atual), $hora (hora atual), $nomedofilme (nome do filme/série)
+                        </p>
+                        <p class="text-xs text-muted">
+                            Deixe em branco para usar a mensagem padrão
+                        </p>
                     </div>
 
                     <div class="form-actions">
@@ -258,6 +290,33 @@ include "includes/header.php";
                 </div>
             </div>
         </div>
+        
+        <!-- Variáveis Disponíveis -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🔤 Variáveis para Mensagens</h3>
+            </div>
+            <div class="card-body">
+                <div class="space-y-3 text-sm">
+                    <div class="variable-item">
+                        <code>$data</code>
+                        <p>Data atual (ex: 25/06/2025)</p>
+                    </div>
+                    <div class="variable-item">
+                        <code>$hora</code>
+                        <p>Hora atual (ex: 14:30)</p>
+                    </div>
+                    <div class="variable-item">
+                        <code>$jogos</code>
+                        <p>Quantidade de jogos (apenas para banners de futebol)</p>
+                    </div>
+                    <div class="variable-item">
+                        <code>$nomedofilme</code>
+                        <p>Nome do filme ou série (apenas para banners de filmes/séries)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -359,6 +418,28 @@ include "includes/header.php";
         margin-top: 0.125rem;
         flex-shrink: 0;
     }
+    
+    .variable-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem;
+        background: var(--bg-tertiary);
+        border-radius: var(--border-radius-sm);
+    }
+    
+    .variable-item code {
+        font-family: monospace;
+        background: var(--bg-primary);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-weight: 600;
+        color: var(--primary-600);
+        border: 1px solid var(--border-color);
+        min-width: 100px;
+        display: inline-block;
+        text-align: center;
+    }
 
     .space-y-3 > * + * {
         margin-top: 0.75rem;
@@ -427,6 +508,11 @@ include "includes/header.php";
     [data-theme="dark"] .status-warning {
         background: rgba(245, 158, 11, 0.1);
         color: var(--warning-400);
+    }
+    
+    [data-theme="dark"] .variable-item code {
+        background: var(--bg-secondary);
+        color: var(--primary-400);
     }
 </style>
 

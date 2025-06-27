@@ -13,9 +13,11 @@ class TelegramSettings {
      * @param int $userId ID do usuário
      * @param string $botToken Token do bot do Telegram
      * @param string $chatId ID do chat/grupo do Telegram
+     * @param string $footballMessage Mensagem personalizada para banners de futebol
+     * @param string $movieSeriesMessage Mensagem personalizada para banners de filmes/séries
      * @return array Resultado da operação
      */
-    public function saveSettings($userId, $botToken, $chatId) {
+    public function saveSettings($userId, $botToken, $chatId, $footballMessage = null, $movieSeriesMessage = null) {
         try {
             // Validar parâmetros
             if (empty($botToken) || empty($chatId)) {
@@ -33,15 +35,17 @@ class TelegramSettings {
             }
             
             $stmt = $this->db->prepare("
-                INSERT INTO user_telegram_settings (user_id, bot_token, chat_id) 
-                VALUES (?, ?, ?)
+                INSERT INTO user_telegram_settings (user_id, bot_token, chat_id, football_message, movie_series_message) 
+                VALUES (?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE 
                 bot_token = VALUES(bot_token), 
                 chat_id = VALUES(chat_id),
+                football_message = VALUES(football_message),
+                movie_series_message = VALUES(movie_series_message),
                 updated_at = CURRENT_TIMESTAMP
             ");
             
-            $stmt->execute([$userId, $botToken, $chatId]);
+            $stmt->execute([$userId, $botToken, $chatId, $footballMessage, $movieSeriesMessage]);
             
             return ['success' => true, 'message' => 'Configurações do Telegram salvas com sucesso'];
         } catch (PDOException $e) {
@@ -58,7 +62,7 @@ class TelegramSettings {
     public function getSettings($userId) {
         try {
             $stmt = $this->db->prepare("
-                SELECT bot_token, chat_id, created_at, updated_at 
+                SELECT bot_token, chat_id, football_message, movie_series_message, created_at, updated_at 
                 FROM user_telegram_settings 
                 WHERE user_id = ?
             ");

@@ -438,7 +438,7 @@ try {
                             Baixar Banner
                         </a>
                         
-                        <a href="send_telegram.php?banner_path=<?php echo urlencode($tempFilePath); ?>&banner_name=<?php echo urlencode($originalFileName); ?>" class="btn btn-success w-full">
+                        <a href="send_telegram.php?banner_path=<?php echo urlencode($tempFilePath); ?>&banner_name=<?php echo urlencode($originalFileName); ?>&content_name=<?php echo urlencode($nome); ?>&type=<?php echo urlencode($type === 'tv' ? 'serie' : 'filme'); ?>" class="btn btn-success w-full">
                             <i class="fab fa-telegram"></i>
                             Enviar para Telegram
                         </a>

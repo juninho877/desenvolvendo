@@ -80,6 +80,8 @@ class Database {
             user_id INT NOT NULL,
             bot_token VARCHAR(255) NOT NULL,
             chat_id VARCHAR(50) NOT NULL,
+            football_message TEXT,
+            movie_series_message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY unique_user_telegram (user_id),
