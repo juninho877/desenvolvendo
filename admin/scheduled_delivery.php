@@ -9,7 +9,7 @@
 
 // Desativar exibição de erros
 ini_set('display_errors', 0);
-error_reporting(E_ALL & ~E_NOTICE);
+error_reporting(E_ALL);
 
 // Definir timezone
 date_default_timezone_set('America/Sao_Paulo');
@@ -29,11 +29,6 @@ if (!$isAuthorized) {
     exit;
 }
 
-// Incluir classes necessárias
-require_once __DIR__ . '/classes/TelegramSettings.php';
-require_once __DIR__ . '/classes/TelegramService.php';
-require_once __DIR__ . '/includes/banner_functions.php';
-
 // Função para registrar logs
 function logMessage($message) {
     $logFile = __DIR__ . '/logs/scheduled_delivery.log';
@@ -41,7 +36,7 @@ function logMessage($message) {
     
     // Criar diretório de logs se não existir
     if (!is_dir($logDir)) {
-        mkdir($logDir, 0755, true);
+        @mkdir($logDir, 0755, true);
     }
     
     $timestamp = date('Y-m-d H:i:s');
@@ -55,7 +50,7 @@ function logMessage($message) {
         file_put_contents($logFile, $newContent);
     }
     
-    file_put_contents($logFile, $logMessage, FILE_APPEND);
+    @file_put_contents($logFile, $logMessage, FILE_APPEND);
     
     // Se estiver rodando via CLI, exibir mensagem no console
     if (php_sapi_name() === 'cli') {
@@ -67,6 +62,24 @@ function logMessage($message) {
 logMessage("Iniciando verificação de envios agendados");
 
 try {
+    // Verificar se as classes necessárias existem
+    if (!file_exists(__DIR__ . '/classes/TelegramSettings.php')) {
+        throw new Exception("Arquivo TelegramSettings.php não encontrado");
+    }
+    
+    if (!file_exists(__DIR__ . '/classes/TelegramService.php')) {
+        throw new Exception("Arquivo TelegramService.php não encontrado");
+    }
+    
+    if (!file_exists(__DIR__ . '/includes/banner_functions.php')) {
+        throw new Exception("Arquivo banner_functions.php não encontrado");
+    }
+    
+    // Incluir classes necessárias
+    require_once __DIR__ . '/classes/TelegramSettings.php';
+    require_once __DIR__ . '/classes/TelegramService.php';
+    require_once __DIR__ . '/includes/banner_functions.php';
+    
     // Obter hora atual ou hora de teste
     $currentTime = isset($_GET['test_time']) ? $_GET['test_time'] : date('H:i');
     logMessage("Hora para verificação: {$currentTime}");
@@ -128,17 +141,22 @@ try {
         
         logMessage("Processando usuário ID {$userId} - Tema {$theme} - {$index+1}/{$totalUsers}");
         
-        // Determinar tipo de banner baseado no tema
-        $bannerType = 'football_' . $theme;
-        
-        // Gerar e enviar banners
-        $result = $telegramService->generateAndSendBanners($userId, $bannerType, $jogos);
-        
-        if ($result['success']) {
-            logMessage("✅ Sucesso para usuário {$userId}: {$result['message']}");
-            $successCount++;
-        } else {
-            logMessage("❌ Erro para usuário {$userId}: {$result['message']}");
+        try {
+            // Determinar tipo de banner baseado no tema
+            $bannerType = 'football_' . $theme;
+            
+            // Gerar e enviar banners
+            $result = $telegramService->generateAndSendBanners($userId, $bannerType, $jogos);
+            
+            if ($result['success']) {
+                logMessage("✅ Sucesso para usuário {$userId}: {$result['message']}");
+                $successCount++;
+            } else {
+                logMessage("❌ Erro para usuário {$userId}: {$result['message']}");
+                $errorCount++;
+            }
+        } catch (Exception $e) {
+            logMessage("❌ Exceção ao processar usuário {$userId}: " . $e->getMessage());
             $errorCount++;
         }
         

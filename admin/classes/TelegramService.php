@@ -72,14 +72,46 @@ class TelegramService {
         try {
             $url = "https://api.telegram.org/bot{$botToken}/sendPhoto";
             
+            // Verificar se o arquivo existe e é legível
+            if (!file_exists($imagePath) || !is_readable($imagePath)) {
+                error_log("Arquivo não existe ou não é legível: " . $imagePath);
+                return ['success' => false, 'message' => 'Arquivo não existe ou não é legível: ' . $imagePath];
+            }
+            
+            // Verificar tamanho do arquivo
+            $fileSize = filesize($imagePath);
+            if ($fileSize === false) {
+                error_log("Não foi possível obter o tamanho do arquivo: " . $imagePath);
+                return ['success' => false, 'message' => 'Não foi possível obter o tamanho do arquivo'];
+            }
+            
+            if ($fileSize > 10 * 1024 * 1024) { // 10MB
+                error_log("Arquivo muito grande (> 10MB): " . $imagePath . " - " . $fileSize . " bytes");
+                return ['success' => false, 'message' => 'Arquivo muito grande (> 10MB)'];
+            }
+            
+            // Criar CURLFile
+            $curlFile = new CURLFile($imagePath);
+            if (!$curlFile) {
+                error_log("Falha ao criar CURLFile para: " . $imagePath);
+                return ['success' => false, 'message' => 'Falha ao criar CURLFile'];
+            }
+            
             $postFields = [
                 'chat_id' => $chatId,
-                'photo' => new CURLFile($imagePath),
+                'photo' => $curlFile,
                 'caption' => $caption,
                 'parse_mode' => 'HTML'
             ];
             
+            // Inicializar cURL
             $ch = curl_init();
+            if (!$ch) {
+                error_log("Falha ao inicializar cURL");
+                return ['success' => false, 'message' => 'Falha ao inicializar cURL'];
+            }
+            
+            // Configurar opções do cURL
             curl_setopt_array($ch, [
                 CURLOPT_URL => $url,
                 CURLOPT_POST => true,
@@ -88,32 +120,36 @@ class TelegramService {
                 CURLOPT_TIMEOUT => 30,
                 CURLOPT_USERAGENT => 'FutBanner/1.0',
                 CURLOPT_VERBOSE => true,
+                CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_STDERR => fopen('php://temp', 'w+')
             ]);
             
+            // Executar cURL
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            $errno = curl_errno($ch);
             
             // Obter informações de erro detalhadas
             $verbose = stream_get_contents(fopen('php://temp', 'r'));
             
             if ($response === false) {
-                $error = curl_error($ch);
                 curl_close($ch);
-                error_log("Erro cURL ao enviar foto: " . $error . "\nVerbose: " . $verbose);
-                return ['success' => false, 'message' => 'Erro na conexão com o Telegram: ' . $error];
+                error_log("Erro cURL ao enviar foto: " . $error . " (código: " . $errno . ")\nVerbose: " . $verbose);
+                return ['success' => false, 'message' => 'Erro na conexão com o Telegram: ' . $error . ' (código: ' . $errno . ')'];
             }
             
             curl_close($ch);
             
+            // Decodificar resposta JSON
             $data = json_decode($response, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
                 error_log("Erro ao decodificar resposta JSON: " . json_last_error_msg() . "\nResposta: " . $response);
-                return ['success' => false, 'message' => 'Erro ao decodificar resposta do Telegram'];
+                return ['success' => false, 'message' => 'Erro ao decodificar resposta do Telegram: ' . json_last_error_msg()];
             }
             
-            if (!$data['ok']) {
+            if (!isset($data['ok']) || $data['ok'] !== true) {
                 error_log("Erro da API do Telegram: " . ($data['description'] ?? 'Erro desconhecido') . "\nCódigo: " . $httpCode);
                 return ['success' => false, 'message' => 'Erro do Telegram: ' . ($data['description'] ?? 'Erro desconhecido')];
             }
@@ -121,7 +157,7 @@ class TelegramService {
             return ['success' => true, 'message' => 'Imagem enviada com sucesso para o Telegram'];
             
         } catch (Exception $e) {
-            error_log("Exceção ao enviar foto: " . $e->getMessage());
+            error_log("Exceção ao enviar foto: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return ['success' => false, 'message' => 'Erro no envio: ' . $e->getMessage()];
         }
     }
@@ -140,12 +176,19 @@ class TelegramService {
             
             // Adicionar arquivos
             foreach ($imagePaths as $index => $imagePath) {
-                if (file_exists($imagePath)) {
+                if (file_exists($imagePath) && is_readable($imagePath)) {
                     $postFields['photo' . $index] = new CURLFile($imagePath);
+                } else {
+                    error_log("Arquivo não existe ou não é legível: " . $imagePath);
                 }
             }
             
             $ch = curl_init();
+            if (!$ch) {
+                error_log("Falha ao inicializar cURL para álbum");
+                return ['success' => false, 'message' => 'Falha ao inicializar cURL para álbum'];
+            }
+            
             curl_setopt_array($ch, [
                 CURLOPT_URL => $url,
                 CURLOPT_POST => true,
@@ -154,20 +197,22 @@ class TelegramService {
                 CURLOPT_TIMEOUT => 60, // Mais tempo para múltiplas imagens
                 CURLOPT_USERAGENT => 'FutBanner/1.0',
                 CURLOPT_VERBOSE => true,
+                CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_STDERR => fopen('php://temp', 'w+')
             ]);
             
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            $errno = curl_errno($ch);
             
             // Obter informações de erro detalhadas
             $verbose = stream_get_contents(fopen('php://temp', 'r'));
             
             if ($response === false) {
-                $error = curl_error($ch);
                 curl_close($ch);
-                error_log("Erro cURL ao enviar álbum: " . $error . "\nVerbose: " . $verbose);
-                return ['success' => false, 'message' => 'Erro na conexão com o Telegram: ' . $error];
+                error_log("Erro cURL ao enviar álbum: " . $error . " (código: " . $errno . ")\nVerbose: " . $verbose);
+                return ['success' => false, 'message' => 'Erro na conexão com o Telegram: ' . $error . ' (código: ' . $errno . ')'];
             }
             
             curl_close($ch);
@@ -176,10 +221,10 @@ class TelegramService {
             
             if (json_last_error() !== JSON_ERROR_NONE) {
                 error_log("Erro ao decodificar resposta JSON do álbum: " . json_last_error_msg() . "\nResposta: " . $response);
-                return ['success' => false, 'message' => 'Erro ao decodificar resposta do Telegram'];
+                return ['success' => false, 'message' => 'Erro ao decodificar resposta do Telegram: ' . json_last_error_msg()];
             }
             
-            if (!$data['ok']) {
+            if (!isset($data['ok']) || $data['ok'] !== true) {
                 error_log("Erro da API do Telegram (álbum): " . ($data['description'] ?? 'Erro desconhecido') . "\nCódigo: " . $httpCode);
                 return ['success' => false, 'message' => 'Erro do Telegram: ' . ($data['description'] ?? 'Erro desconhecido')];
             }
@@ -191,7 +236,7 @@ class TelegramService {
             ];
             
         } catch (Exception $e) {
-            error_log("Exceção ao enviar álbum: " . $e->getMessage());
+            error_log("Exceção ao enviar álbum: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return ['success' => false, 'message' => 'Erro no envio do álbum: ' . $e->getMessage()];
         }
     }
@@ -234,29 +279,46 @@ class TelegramService {
             
             // Gerar cada banner
             foreach ($gruposDeJogos as $index => $grupoJogos) {
-                // Usar a função para gerar o recurso de imagem diretamente
-                $imageResource = generateFootballBannerResource($userId, $bannerModel, $index, $jogos);
-                
-                if ($imageResource) {
-                    // Salvar em arquivo temporário
-                    $tempFile = sys_get_temp_dir() . '/futbanner_telegram_' . uniqid() . '_' . $index . '.png';
+                try {
+                    // Usar a função para gerar o recurso de imagem diretamente
+                    $imageResource = generateFootballBannerResource($userId, $bannerModel, $index, $jogos);
                     
-                    if (imagepng($imageResource, $tempFile)) {
-                        $imagePaths[] = $tempFile;
-                        $tempFiles[] = $tempFile;
+                    if ($imageResource) {
+                        // Salvar em arquivo temporário
+                        $tempFile = sys_get_temp_dir() . '/futbanner_telegram_' . uniqid() . '_' . $index . '.png';
+                        
+                        if (imagepng($imageResource, $tempFile)) {
+                            $imagePaths[] = $tempFile;
+                            $tempFiles[] = $tempFile;
+                        } else {
+                            error_log("Falha ao salvar imagem temporária: " . $tempFile);
+                        }
+                        
+                        // Liberar memória
+                        imagedestroy($imageResource);
+                    } else {
+                        error_log("Falha ao gerar recurso de imagem para o grupo " . $index);
                     }
-                    
-                    // Liberar memória
-                    imagedestroy($imageResource);
+                } catch (Exception $e) {
+                    error_log("Exceção ao gerar banner para grupo " . $index . ": " . $e->getMessage());
                 }
             }
             
             if (empty($imagePaths)) {
-                return ['success' => false, 'message' => 'Erro ao gerar banners'];
+                return ['success' => false, 'message' => 'Erro ao gerar banners. Nenhuma imagem foi criada.'];
             }
             
             // Obter configurações do usuário
             $settings = $this->telegramSettings->getSettings($userId);
+            if (!$settings) {
+                // Limpar arquivos temporários
+                foreach ($tempFiles as $tempFile) {
+                    if (file_exists($tempFile)) {
+                        @unlink($tempFile);
+                    }
+                }
+                return ['success' => false, 'message' => 'Configurações do Telegram não encontradas para o usuário'];
+            }
             
             // Preparar legenda personalizada ou usar padrão
             $caption = "🏆 Banners de Futebol - " . date('d/m/Y') . "\n";
@@ -285,14 +347,14 @@ class TelegramService {
             // Limpar arquivos temporários
             foreach ($tempFiles as $tempFile) {
                 if (file_exists($tempFile)) {
-                    unlink($tempFile);
+                    @unlink($tempFile);
                 }
             }
             
             return $result;
             
         } catch (Exception $e) {
-            error_log("Erro em generateAndSendBanners: " . $e->getMessage());
+            error_log("Erro em generateAndSendBanners: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return ['success' => false, 'message' => 'Erro ao gerar e enviar banners: ' . $e->getMessage()];
         }
     }
@@ -308,7 +370,7 @@ class TelegramService {
     public function sendMovieSeriesBanner($userId, $bannerPath, $contentName, $contentType = 'filme') {
         try {
             if (!file_exists($bannerPath)) {
-                return ['success' => false, 'message' => 'Arquivo do banner não encontrado'];
+                return ['success' => false, 'message' => 'Arquivo do banner não encontrado: ' . $bannerPath];
             }
             
             // Obter configurações do usuário
@@ -343,7 +405,7 @@ class TelegramService {
             return $result;
             
         } catch (Exception $e) {
-            error_log("Erro em sendMovieSeriesBanner: " . $e->getMessage());
+            error_log("Erro em sendMovieSeriesBanner: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return ['success' => false, 'message' => 'Erro ao enviar banner: ' . $e->getMessage()];
         }
     }
