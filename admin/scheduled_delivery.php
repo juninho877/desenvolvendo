@@ -67,9 +67,9 @@ function logMessage($message) {
 logMessage("Iniciando verificação de envios agendados");
 
 try {
-    // Obter hora atual
-    $currentTime = date('H:i');
-    logMessage("Hora atual: {$currentTime}");
+    // Obter hora atual ou hora de teste
+    $currentTime = isset($_GET['test_time']) ? $_GET['test_time'] : date('H:i');
+    logMessage("Hora para verificação: {$currentTime}");
     
     // Inicializar classes
     $telegramSettings = new TelegramSettings();
@@ -83,6 +83,17 @@ try {
     
     if ($totalUsers === 0) {
         logMessage("Nenhum envio agendado para este horário. Finalizando.");
+        
+        // Se for uma chamada de teste via web, retornar JSON
+        if (isset($_GET['test_time'])) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => true,
+                'message' => "Nenhum usuário configurado para envio às {$currentTime}",
+                'processed_users' => 0
+            ]);
+        }
+        
         exit;
     }
     
@@ -91,12 +102,26 @@ try {
     
     if (empty($jogos)) {
         logMessage("Nenhum jogo disponível para hoje. Finalizando.");
+        
+        // Se for uma chamada de teste via web, retornar JSON
+        if (isset($_GET['test_time'])) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'message' => "Nenhum jogo disponível para hoje",
+                'processed_users' => 0
+            ]);
+        }
+        
         exit;
     }
     
     logMessage("Encontrados " . count($jogos) . " jogos para hoje");
     
     // Processar cada usuário
+    $successCount = 0;
+    $errorCount = 0;
+    
     foreach ($usersToSend as $index => $user) {
         $userId = $user['user_id'];
         $theme = $user['scheduled_football_theme'];
@@ -111,8 +136,10 @@ try {
         
         if ($result['success']) {
             logMessage("✅ Sucesso para usuário {$userId}: {$result['message']}");
+            $successCount++;
         } else {
             logMessage("❌ Erro para usuário {$userId}: {$result['message']}");
+            $errorCount++;
         }
         
         // Pequena pausa entre envios para não sobrecarregar
@@ -121,11 +148,33 @@ try {
         }
     }
     
-    logMessage("Processamento concluído para {$totalUsers} usuários");
+    logMessage("Processamento concluído: {$successCount} sucessos, {$errorCount} erros");
+    
+    // Se for uma chamada de teste via web, retornar JSON
+    if (isset($_GET['test_time'])) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => true,
+            'message' => "Processamento concluído: {$successCount} sucessos, {$errorCount} erros",
+            'processed_users' => $totalUsers,
+            'success_count' => $successCount,
+            'error_count' => $errorCount
+        ]);
+    }
     
 } catch (Exception $e) {
     logMessage("❌ ERRO CRÍTICO: " . $e->getMessage());
     logMessage("Trace: " . $e->getTraceAsString());
+    
+    // Se for uma chamada de teste via web, retornar JSON
+    if (isset($_GET['test_time'])) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'message' => "Erro crítico: " . $e->getMessage(),
+            'processed_users' => 0
+        ]);
+    }
 }
 
 logMessage("Finalizado");
