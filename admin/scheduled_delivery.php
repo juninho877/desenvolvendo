@@ -125,7 +125,8 @@ try {
         exit(0);
     }
     
-    logMessage("Encontrados " . count($usersWithScheduledDelivery) . " usuários para processamento");
+    $totalUsers = count($usersWithScheduledDelivery);
+    logMessage("Encontrados " . $totalUsers . " usuários para processamento");
     
     error_log("scheduled_delivery.php: Before obtaining today's games.");
     // Obter jogos de hoje
@@ -161,6 +162,7 @@ try {
         $theme = $userSettings['scheduled_football_theme'];
         $bannerType = 'football_' . $theme;
         
+        // Fixed line - using string concatenation instead of interpolation with arithmetic
         logMessage("Processando usuário ID {$userId} - Tema {$theme} - " . ($index + 1) . "/{$totalUsers}");
         
         try {
