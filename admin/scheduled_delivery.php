@@ -16,8 +16,6 @@ ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/scheduled_delivery.log');
 date_default_timezone_set('America/Sao_Paulo');
 
-error_log("scheduled_delivery.php: Script execution started.");
-
 // Criar diretório de logs se não existir
 $logDir = __DIR__ . '/logs';
 if (!is_dir($logDir)) {
@@ -38,7 +36,6 @@ function logMessage($message, $level = 'INFO') {
 }
 
 try {
-    error_log("scheduled_delivery.php: Entering main try block.");
     logMessage("=== INICIANDO EXECUÇÃO DO ENVIO AGENDADO ===");
     
     // Verificar se é execução via linha de comando ou web
@@ -63,35 +60,9 @@ try {
     // Incluir dependências
     logMessage("Carregando dependências...");
     
-    error_log("scheduled_delivery.php: Before checking TelegramSettings.php existence.");
-    if (!file_exists(__DIR__ . '/classes/TelegramSettings.php')) {
-        throw new Exception("Arquivo TelegramSettings.php não encontrado");
-    }
-    error_log("scheduled_delivery.php: After checking TelegramSettings.php existence.");
-    
-    error_log("scheduled_delivery.php: Before checking TelegramService.php existence.");
-    if (!file_exists(__DIR__ . '/classes/TelegramService.php')) {
-        throw new Exception("Arquivo TelegramService.php não encontrado");
-    }
-    error_log("scheduled_delivery.php: After checking TelegramService.php existence.");
-    
-    error_log("scheduled_delivery.php: Before checking banner_functions.php existence.");
-    if (!file_exists(__DIR__ . '/includes/banner_functions.php')) {
-        throw new Exception("Arquivo banner_functions.php não encontrado");
-    }
-    error_log("scheduled_delivery.php: After checking banner_functions.php existence.");
-    
-    error_log("scheduled_delivery.php: Before including TelegramSettings.php.");
     require_once __DIR__ . '/classes/TelegramSettings.php';
-    error_log("scheduled_delivery.php: After including TelegramSettings.php.");
-    
-    error_log("scheduled_delivery.php: Before including TelegramService.php.");
     require_once __DIR__ . '/classes/TelegramService.php';
-    error_log("scheduled_delivery.php: After including TelegramService.php.");
-    
-    error_log("scheduled_delivery.php: Before including banner_functions.php.");
     require_once __DIR__ . '/includes/banner_functions.php';
-    error_log("scheduled_delivery.php: After including banner_functions.php.");
     
     logMessage("Dependências carregadas com sucesso");
     
@@ -121,17 +92,14 @@ try {
         }
         
         logMessage("=== EXECUÇÃO FINALIZADA (NENHUM USUÁRIO) ===");
-        error_log("scheduled_delivery.php: Script finished successfully.");
         exit(0);
     }
     
     $totalUsers = count($usersWithScheduledDelivery);
     logMessage("Encontrados " . $totalUsers . " usuários para processamento");
     
-    error_log("scheduled_delivery.php: Before obtaining today's games.");
     // Obter jogos de hoje
     $jogos = obterJogosDeHoje();
-    error_log("scheduled_delivery.php: After obtaining today's games.");
     
     if (empty($jogos)) {
         logMessage("Nenhum jogo disponível para hoje", 'WARNING');
@@ -146,7 +114,6 @@ try {
         }
         
         logMessage("=== EXECUÇÃO FINALIZADA (SEM JOGOS) ===");
-        error_log("scheduled_delivery.php: Script finished successfully.");
         exit(0);
     }
     
@@ -166,9 +133,7 @@ try {
         logMessage("Processando usuário ID {$userId} - Tema {$theme} - " . ($index + 1) . "/{$totalUsers}");
         
         try {
-            error_log("scheduled_delivery.php: Before generating and sending banners for user {$userId}.");
             $result = $telegramService->generateAndSendBanners($userId, $bannerType, $jogos);
-            error_log("scheduled_delivery.php: After generating and sending banners for user {$userId}. Result: " . json_encode($result));
             
             if ($result['success']) {
                 logMessage("✅ Banners enviados com sucesso para usuário ID {$userId}");
@@ -198,7 +163,6 @@ try {
     ];
     
     logMessage("=== EXECUÇÃO FINALIZADA COM SUCESSO ===");
-    error_log("scheduled_delivery.php: Exiting main try block successfully.");
     
     if (!$isCLI) {
         echo json_encode($response);
@@ -206,10 +170,7 @@ try {
         echo "Envio agendado processado: $successUsers com sucesso, $failedUsers com falha\n";
     }
     
-    error_log("scheduled_delivery.php: Script finished successfully.");
-    
 } catch (Exception $e) {
-    error_log("scheduled_delivery.php: Caught exception: " . $e->getMessage());
     $errorMsg = "ERRO FATAL: " . $e->getMessage();
     logMessage($errorMsg, 'FATAL');
     
@@ -225,5 +186,4 @@ try {
         exit(1);
     }
 }
-error_log("scheduled_delivery.php: Script finished successfully.");
 ?>
