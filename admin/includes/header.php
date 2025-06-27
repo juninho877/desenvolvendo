@@ -690,6 +690,14 @@ if (!isset($_SESSION["usuario"])) {
                     </a>
                 </div>
 
+                <div class="nav-section">
+                    <div class="nav-section-title">Integração</div>
+                    <a href="telegram.php" class="nav-item">
+                        <i class="fab fa-telegram"></i>
+                        <span>Telegram</span>
+                    </a>
+                </div>
+
                 <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
                 <div class="nav-section">
                     <div class="nav-section-title">Administração</div>

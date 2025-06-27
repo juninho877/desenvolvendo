@@ -74,6 +74,18 @@ class Database {
             FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE,
             INDEX idx_user_image_key (user_id, image_key)
         );
+        
+        CREATE TABLE IF NOT EXISTS user_telegram_settings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            bot_token VARCHAR(255) NOT NULL,
+            chat_id VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_user_telegram (user_id),
+            FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+            INDEX idx_user_telegram (user_id)
+        );
         ";
         
         $this->connection->exec($sql);
