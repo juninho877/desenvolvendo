@@ -14,6 +14,9 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/scheduled_delivery.log');
+date_default_timezone_set('America/Sao_Paulo');
+
+error_log("scheduled_delivery.php: Script execution started.");
 
 // Criar diretório de logs se não existir
 $logDir = __DIR__ . '/logs';
@@ -22,7 +25,7 @@ if (!is_dir($logDir)) {
 }
 
 // Função de log personalizada
-function writeLog($message, $level = 'INFO') {
+function logMessage($message, $level = 'INFO') {
     $timestamp = date('Y-m-d H:i:s');
     $logMessage = "[$timestamp] [$level] $message" . PHP_EOL;
     
@@ -35,11 +38,12 @@ function writeLog($message, $level = 'INFO') {
 }
 
 try {
-    writeLog("=== INICIANDO EXECUÇÃO DO ENVIO AGENDADO ===");
+    error_log("scheduled_delivery.php: Entering main try block.");
+    logMessage("=== INICIANDO EXECUÇÃO DO ENVIO AGENDADO ===");
     
     // Verificar se é execução via linha de comando ou web
     $isCLI = php_sapi_name() === 'cli';
-    writeLog("Modo de execução: " . ($isCLI ? "CLI" : "WEB"));
+    logMessage("Modo de execução: " . ($isCLI ? "CLI" : "WEB"));
     
     if (!$isCLI) {
         // Se for via web, verificar autenticação básica ou token
@@ -47,235 +51,165 @@ try {
         $providedToken = $_GET['token'] ?? $_POST['token'] ?? '';
         
         if (!in_array($providedToken, $validTokens)) {
-            writeLog("Acesso negado - Token inválido: $providedToken", 'ERROR');
+            logMessage("Acesso negado - Token inválido: $providedToken", 'ERROR');
             http_response_code(403);
             die(json_encode(['error' => 'Token inválido']));
         }
         
-        writeLog("Acesso via web autorizado com token válido");
+        logMessage("Acesso via web autorizado com token válido");
         header('Content-Type: application/json');
     }
     
     // Incluir dependências
-    writeLog("Carregando dependências...");
+    logMessage("Carregando dependências...");
     
-    if (!file_exists(__DIR__ . '/config/database.php')) {
-        throw new Exception("Arquivo de configuração do banco não encontrado");
+    error_log("scheduled_delivery.php: Before checking TelegramSettings.php existence.");
+    if (!file_exists(__DIR__ . '/classes/TelegramSettings.php')) {
+        throw new Exception("Arquivo TelegramSettings.php não encontrado");
     }
+    error_log("scheduled_delivery.php: After checking TelegramSettings.php existence.");
     
-    require_once __DIR__ . '/config/database.php';
-    
-    if (!file_exists(__DIR__ . '/classes/TelegramBot.php')) {
-        throw new Exception("Classe TelegramBot não encontrada");
+    error_log("scheduled_delivery.php: Before checking TelegramService.php existence.");
+    if (!file_exists(__DIR__ . '/classes/TelegramService.php')) {
+        throw new Exception("Arquivo TelegramService.php não encontrado");
     }
+    error_log("scheduled_delivery.php: After checking TelegramService.php existence.");
     
-    require_once __DIR__ . '/classes/TelegramBot.php';
-    
-    writeLog("Dependências carregadas com sucesso");
-    
-    // Conectar ao banco de dados
-    writeLog("Conectando ao banco de dados...");
-    
-    try {
-        $db = Database::getInstance()->getConnection();
-        writeLog("Conexão com banco estabelecida");
-    } catch (Exception $e) {
-        throw new Exception("Erro de conexão com banco: " . $e->getMessage());
+    error_log("scheduled_delivery.php: Before checking banner_functions.php existence.");
+    if (!file_exists(__DIR__ . '/includes/banner_functions.php')) {
+        throw new Exception("Arquivo banner_functions.php não encontrado");
     }
+    error_log("scheduled_delivery.php: After checking banner_functions.php existence.");
     
-    // Verificar se a tabela existe
-    writeLog("Verificando estrutura do banco...");
+    error_log("scheduled_delivery.php: Before including TelegramSettings.php.");
+    require_once __DIR__ . '/classes/TelegramSettings.php';
+    error_log("scheduled_delivery.php: After including TelegramSettings.php.");
     
-    try {
-        $stmt = $db->query("SHOW TABLES LIKE 'scheduled_deliveries'");
-        if ($stmt->rowCount() === 0) {
-            writeLog("Tabela scheduled_deliveries não existe, criando...");
-            createScheduledDeliveriesTable($db);
-        }
-    } catch (Exception $e) {
-        writeLog("Erro ao verificar tabela: " . $e->getMessage(), 'ERROR');
-        throw $e;
-    }
+    error_log("scheduled_delivery.php: Before including TelegramService.php.");
+    require_once __DIR__ . '/classes/TelegramService.php';
+    error_log("scheduled_delivery.php: After including TelegramService.php.");
     
-    // Buscar envios agendados que devem ser executados agora
+    error_log("scheduled_delivery.php: Before including banner_functions.php.");
+    require_once __DIR__ . '/includes/banner_functions.php';
+    error_log("scheduled_delivery.php: After including banner_functions.php.");
+    
+    logMessage("Dependências carregadas com sucesso");
+    
+    // Obter horário atual ou de teste
     $now = new DateTime();
-    $currentTime = $now->format('H:i');
-    $currentDate = $now->format('Y-m-d');
+    $currentTime = isset($_GET['test_time']) ? $_GET['test_time'] : $now->format('H:i');
     
-    writeLog("Buscando envios agendados para $currentDate às $currentTime");
+    logMessage("Buscando usuários com envio agendado para o horário: $currentTime");
     
-    $stmt = $db->prepare("
-        SELECT sd.*, u.username 
-        FROM scheduled_deliveries sd
-        JOIN usuarios u ON sd.user_id = u.id
-        WHERE sd.status = 'pending'
-        AND sd.scheduled_date = ?
-        AND sd.scheduled_time = ?
-        AND sd.attempts < 3
-    ");
+    // Inicializar classes
+    $telegramSettings = new TelegramSettings();
+    $telegramService = new TelegramService();
     
-    $stmt->execute([$currentDate, $currentTime]);
-    $scheduledDeliveries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Buscar usuários com envio agendado para este horário
+    $usersWithScheduledDelivery = $telegramSettings->getUsersWithScheduledDelivery($currentTime);
     
-    writeLog("Encontrados " . count($scheduledDeliveries) . " envios para processar");
-    
-    if (empty($scheduledDeliveries)) {
-        writeLog("Nenhum envio agendado encontrado para este horário");
+    if (empty($usersWithScheduledDelivery)) {
+        logMessage("Nenhum usuário encontrado com envio agendado para $currentTime");
         
         if (!$isCLI) {
             echo json_encode([
                 'success' => true,
-                'message' => 'Nenhum envio agendado para este horário',
-                'processed' => 0,
-                'timestamp' => $now->format('Y-m-d H:i:s')
+                'message' => "Nenhum usuário com envio agendado para $currentTime",
+                'processed_users' => 0,
+                'timestamp' => date('Y-m-d H:i:s')
             ]);
         }
         
-        writeLog("=== EXECUÇÃO FINALIZADA (NENHUM ENVIO) ===");
+        logMessage("=== EXECUÇÃO FINALIZADA (NENHUM USUÁRIO) ===");
+        error_log("scheduled_delivery.php: Script finished successfully.");
         exit(0);
     }
     
-    // Processar cada envio agendado
-    $processedCount = 0;
-    $successCount = 0;
-    $errorCount = 0;
+    logMessage("Encontrados " . count($usersWithScheduledDelivery) . " usuários para processamento");
     
-    foreach ($scheduledDeliveries as $delivery) {
-        $deliveryId = $delivery['id'];
-        $userId = $delivery['user_id'];
-        $username = $delivery['username'];
+    error_log("scheduled_delivery.php: Before obtaining today's games.");
+    // Obter jogos de hoje
+    $jogos = obterJogosDeHoje();
+    error_log("scheduled_delivery.php: After obtaining today's games.");
+    
+    if (empty($jogos)) {
+        logMessage("Nenhum jogo disponível para hoje", 'WARNING');
         
-        writeLog("Processando envio ID: $deliveryId para usuário: $username");
-        
-        try {
-            // Atualizar tentativas
-            $newAttempts = $delivery['attempts'] + 1;
-            $updateStmt = $db->prepare("
-                UPDATE scheduled_deliveries 
-                SET attempts = ?, last_attempt = NOW() 
-                WHERE id = ?
-            ");
-            $updateStmt->execute([$newAttempts, $deliveryId]);
-            
-            // Verificar se o arquivo ainda existe
-            $bannerPath = $delivery['banner_path'];
-            if (!file_exists($bannerPath)) {
-                throw new Exception("Arquivo do banner não encontrado: $bannerPath");
-            }
-            
-            writeLog("Arquivo do banner encontrado: $bannerPath");
-            
-            // Inicializar bot do Telegram
-            $telegramBot = new TelegramBot();
-            
-            // Buscar configurações do Telegram do usuário
-            $configStmt = $db->prepare("
-                SELECT telegram_bot_token, telegram_chat_id 
-                FROM user_telegram_config 
-                WHERE user_id = ? AND is_active = 1
-            ");
-            $configStmt->execute([$userId]);
-            $telegramConfig = $configStmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$telegramConfig) {
-                throw new Exception("Configuração do Telegram não encontrada para o usuário");
-            }
-            
-            writeLog("Configuração do Telegram encontrada para usuário $username");
-            
-            // Configurar bot
-            $telegramBot->setBotToken($telegramConfig['telegram_bot_token']);
-            $telegramBot->setChatId($telegramConfig['telegram_chat_id']);
-            
-            // Preparar mensagem
-            $message = $delivery['message'] ?: "Banner gerado automaticamente";
-            $bannerName = $delivery['banner_name'] ?: basename($bannerPath);
-            
-            writeLog("Enviando banner via Telegram...");
-            
-            // Enviar banner
-            $result = $telegramBot->sendPhoto($bannerPath, $message, $bannerName);
-            
-            if ($result['success']) {
-                // Marcar como enviado com sucesso
-                $updateStmt = $db->prepare("
-                    UPDATE scheduled_deliveries 
-                    SET status = 'sent', sent_at = NOW(), telegram_message_id = ?
-                    WHERE id = ?
-                ");
-                $updateStmt->execute([$result['message_id'] ?? null, $deliveryId]);
-                
-                writeLog("Banner enviado com sucesso! ID: $deliveryId");
-                $successCount++;
-                
-                // Remover arquivo após envio bem-sucedido (opcional)
-                if ($delivery['delete_after_send']) {
-                    if (unlink($bannerPath)) {
-                        writeLog("Arquivo removido após envio: $bannerPath");
-                    }
-                }
-                
-            } else {
-                throw new Exception("Erro no envio via Telegram: " . $result['error']);
-            }
-            
-        } catch (Exception $e) {
-            writeLog("Erro ao processar envio ID $deliveryId: " . $e->getMessage(), 'ERROR');
-            $errorCount++;
-            
-            // Se excedeu o número máximo de tentativas, marcar como falhou
-            if ($newAttempts >= 3) {
-                $updateStmt = $db->prepare("
-                    UPDATE scheduled_deliveries 
-                    SET status = 'failed', error_message = ?
-                    WHERE id = ?
-                ");
-                $updateStmt->execute([$e->getMessage(), $deliveryId]);
-                
-                writeLog("Envio ID $deliveryId marcado como falhou após 3 tentativas", 'ERROR');
-            }
+        if (!$isCLI) {
+            echo json_encode([
+                'success' => false,
+                'message' => "Nenhum jogo disponível para hoje",
+                'processed_users' => 0,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]);
         }
         
-        $processedCount++;
+        logMessage("=== EXECUÇÃO FINALIZADA (SEM JOGOS) ===");
+        error_log("scheduled_delivery.php: Script finished successfully.");
+        exit(0);
     }
     
-    writeLog("Processamento concluído: $processedCount total, $successCount sucessos, $errorCount erros");
+    logMessage("Encontrados " . count($jogos) . " jogos para hoje");
     
-    // Limpeza: remover registros antigos (mais de 7 dias)
-    $cleanupStmt = $db->prepare("
-        DELETE FROM scheduled_deliveries 
-        WHERE scheduled_date < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-        AND status IN ('sent', 'failed')
-    ");
-    $cleanupStmt->execute();
-    $cleanedCount = $cleanupStmt->rowCount();
+    // Processar cada usuário
+    $processedUsers = 0;
+    $successUsers = 0;
+    $failedUsers = 0;
     
-    if ($cleanedCount > 0) {
-        writeLog("Limpeza: removidos $cleanedCount registros antigos");
+    foreach ($usersWithScheduledDelivery as $index => $userSettings) {
+        $userId = $userSettings['user_id'];
+        $theme = $userSettings['scheduled_football_theme'];
+        $bannerType = 'football_' . $theme;
+        
+        logMessage("Processando usuário ID {$userId} - Tema {$theme} - " . ($index + 1) . "/{$totalUsers}");
+        
+        try {
+            error_log("scheduled_delivery.php: Before generating and sending banners for user {$userId}.");
+            $result = $telegramService->generateAndSendBanners($userId, $bannerType, $jogos);
+            error_log("scheduled_delivery.php: After generating and sending banners for user {$userId}. Result: " . json_encode($result));
+            
+            if ($result['success']) {
+                logMessage("✅ Banners enviados com sucesso para usuário ID {$userId}");
+                $successUsers++;
+            } else {
+                logMessage("❌ Erro ao enviar banners para usuário ID {$userId}: " . $result['message'], 'ERROR');
+                $failedUsers++;
+            }
+        } catch (Exception $e) {
+            logMessage("❌ Exceção ao processar usuário ID {$userId}: " . $e->getMessage(), 'ERROR');
+            $failedUsers++;
+        }
+        
+        $processedUsers++;
     }
+    
+    logMessage("Processamento concluído: $processedUsers usuários processados, $successUsers com sucesso, $failedUsers com falha");
     
     // Resposta final
     $response = [
         'success' => true,
         'message' => "Processamento concluído",
-        'processed' => $processedCount,
-        'success_count' => $successCount,
-        'error_count' => $errorCount,
-        'cleaned_count' => $cleanedCount,
-        'timestamp' => $now->format('Y-m-d H:i:s')
+        'processed_users' => $processedUsers,
+        'success_users' => $successUsers,
+        'failed_users' => $failedUsers,
+        'timestamp' => date('Y-m-d H:i:s')
     ];
     
-    writeLog("=== EXECUÇÃO FINALIZADA COM SUCESSO ===");
+    logMessage("=== EXECUÇÃO FINALIZADA COM SUCESSO ===");
+    error_log("scheduled_delivery.php: Exiting main try block successfully.");
     
     if (!$isCLI) {
-        echo json_encode($response, JSON_PRETTY_PRINT);
+        echo json_encode($response);
     } else {
-        echo "Envio agendado processado: $successCount sucessos, $errorCount erros\n";
+        echo "Envio agendado processado: $successUsers com sucesso, $failedUsers com falha\n";
     }
     
+    error_log("scheduled_delivery.php: Script finished successfully.");
+    
 } catch (Exception $e) {
+    error_log("scheduled_delivery.php: Caught exception: " . $e->getMessage());
     $errorMsg = "ERRO FATAL: " . $e->getMessage();
-    writeLog($errorMsg, 'FATAL');
+    logMessage($errorMsg, 'FATAL');
     
     if (!$isCLI) {
         http_response_code(500);
@@ -289,37 +223,5 @@ try {
         exit(1);
     }
 }
-
-/**
- * Criar tabela de envios agendados se não existir
- */
-function createScheduledDeliveriesTable($db) {
-    $sql = "
-    CREATE TABLE IF NOT EXISTS scheduled_deliveries (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        banner_path VARCHAR(500) NOT NULL,
-        banner_name VARCHAR(255) NOT NULL,
-        message TEXT,
-        scheduled_date DATE NOT NULL,
-        scheduled_time TIME NOT NULL,
-        status ENUM('pending', 'sent', 'failed') DEFAULT 'pending',
-        attempts INT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        sent_at TIMESTAMP NULL,
-        last_attempt TIMESTAMP NULL,
-        telegram_message_id VARCHAR(100) NULL,
-        error_message TEXT NULL,
-        delete_after_send BOOLEAN DEFAULT FALSE,
-        
-        FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-        INDEX idx_scheduled_datetime (scheduled_date, scheduled_time),
-        INDEX idx_status (status),
-        INDEX idx_user_id (user_id)
-    );
-    ";
-    
-    $db->exec($sql);
-    writeLog("Tabela scheduled_deliveries criada com sucesso");
-}
+error_log("scheduled_delivery.php: Script finished successfully.");
 ?>
