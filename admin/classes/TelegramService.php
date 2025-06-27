@@ -1,5 +1,6 @@
 <?php
 require_once 'TelegramSettings.php';
+require_once __DIR__ . '/../includes/banner_functions.php';
 
 class TelegramService {
     private $telegramSettings;
@@ -183,17 +184,17 @@ class TelegramService {
                 return ['success' => false, 'message' => 'Nenhum jogo disponível para gerar banners'];
             }
             
-            // Determinar script de geração baseado no tipo
-            $generatorScript = '';
+            // Determinar modelo de banner baseado no tipo
+            $bannerModel = 1; // Padrão
             switch ($bannerType) {
                 case 'football_1':
-                    $generatorScript = 'gerar_fut.php';
+                    $bannerModel = 1;
                     break;
                 case 'football_2':
-                    $generatorScript = 'gerar_fut_2.php';
+                    $bannerModel = 2;
                     break;
                 case 'football_3':
-                    $generatorScript = 'gerar_fut_3.php';
+                    $bannerModel = 3;
                     break;
                 default:
                     return ['success' => false, 'message' => 'Tipo de banner inválido'];
@@ -208,10 +209,20 @@ class TelegramService {
             
             // Gerar cada banner
             foreach ($gruposDeJogos as $index => $grupoJogos) {
-                $tempFile = $this->generateBannerImage($generatorScript, $index);
-                if ($tempFile && file_exists($tempFile)) {
-                    $imagePaths[] = $tempFile;
-                    $tempFiles[] = $tempFile;
+                // Usar a nova função para gerar o recurso de imagem diretamente
+                $imageResource = generateFootballBannerResource($userId, $bannerModel, $index, $jogos);
+                
+                if ($imageResource) {
+                    // Salvar em arquivo temporário
+                    $tempFile = sys_get_temp_dir() . '/futbanner_telegram_' . uniqid() . '_' . $index . '.png';
+                    
+                    if (imagepng($imageResource, $tempFile)) {
+                        $imagePaths[] = $tempFile;
+                        $tempFiles[] = $tempFile;
+                    }
+                    
+                    // Liberar memória
+                    imagedestroy($imageResource);
                 }
             }
             
@@ -239,47 +250,6 @@ class TelegramService {
         } catch (Exception $e) {
             error_log("Erro em generateAndSendBanners: " . $e->getMessage());
             return ['success' => false, 'message' => 'Erro ao gerar e enviar banners: ' . $e->getMessage()];
-        }
-    }
-    
-    /**
-     * Gerar imagem de banner temporária
-     */
-    private function generateBannerImage($generatorScript, $grupoIndex) {
-        try {
-            // Gerar URL para o banner
-            $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
-            $scriptPath = dirname($_SERVER['REQUEST_URI']) . '/' . $generatorScript;
-            $bannerUrl = $baseUrl . $scriptPath . '?grupo=' . $grupoIndex . '&_t=' . time();
-            
-            // Baixar a imagem
-            $context = stream_context_create([
-                'http' => [
-                    'timeout' => 30,
-                    'user_agent' => 'FutBanner/1.0'
-                ]
-            ]);
-            
-            $imageData = @file_get_contents($bannerUrl, false, $context);
-            
-            if ($imageData === false) {
-                error_log("Erro ao baixar banner: " . $bannerUrl);
-                return false;
-            }
-            
-            // Salvar em arquivo temporário
-            $tempFile = sys_get_temp_dir() . '/futbanner_telegram_' . uniqid() . '_' . $grupoIndex . '.png';
-            
-            if (file_put_contents($tempFile, $imageData) === false) {
-                error_log("Erro ao salvar arquivo temporário: " . $tempFile);
-                return false;
-            }
-            
-            return $tempFile;
-            
-        } catch (Exception $e) {
-            error_log("Erro em generateBannerImage: " . $e->getMessage());
-            return false;
         }
     }
 }
