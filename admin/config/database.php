@@ -82,11 +82,15 @@ class Database {
             chat_id VARCHAR(50) NOT NULL,
             football_message TEXT,
             movie_series_message TEXT,
+            scheduled_time VARCHAR(5),
+            scheduled_football_theme INT DEFAULT 1,
+            scheduled_delivery_enabled TINYINT(1) DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY unique_user_telegram (user_id),
             FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-            INDEX idx_user_telegram (user_id)
+            INDEX idx_user_telegram (user_id),
+            INDEX idx_scheduled_delivery (scheduled_delivery_enabled, scheduled_time)
         );
         ";
         

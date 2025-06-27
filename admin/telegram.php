@@ -21,8 +21,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $chatId = trim($_POST['chat_id']);
                 $footballMessage = trim($_POST['football_message'] ?? '');
                 $movieSeriesMessage = trim($_POST['movie_series_message'] ?? '');
+                $scheduledTime = trim($_POST['scheduled_time'] ?? '');
+                $scheduledFootballTheme = (int)($_POST['scheduled_football_theme'] ?? 1);
+                $scheduledDeliveryEnabled = isset($_POST['scheduled_delivery_enabled']);
                 
-                $result = $telegramSettings->saveSettings($userId, $botToken, $chatId, $footballMessage, $movieSeriesMessage);
+                $result = $telegramSettings->saveSettings(
+                    $userId, 
+                    $botToken, 
+                    $chatId, 
+                    $footballMessage, 
+                    $movieSeriesMessage,
+                    $scheduledTime,
+                    $scheduledFootballTheme,
+                    $scheduledDeliveryEnabled
+                );
+                
                 $message = $result['message'];
                 $messageType = $result['success'] ? 'success' : 'error';
                 break;
@@ -164,6 +177,75 @@ include "includes/header.php";
                             Deixe em branco para usar a mensagem padrão
                         </p>
                     </div>
+                    
+                    <!-- Seção de Envio Agendado -->
+                    <div class="border-t border-gray-200 my-6 pt-6">
+                        <h4 class="text-lg font-semibold mb-4">
+                            <i class="fas fa-clock mr-2"></i>
+                            Envio Agendado
+                        </h4>
+                        
+                        <div class="form-group">
+                            <div class="flex items-center mb-3">
+                                <input type="checkbox" id="scheduled_delivery_enabled" name="scheduled_delivery_enabled" class="form-checkbox" 
+                                       <?php echo (!empty($currentSettings) && isset($currentSettings['scheduled_delivery_enabled']) && $currentSettings['scheduled_delivery_enabled']) ? 'checked' : ''; ?>>
+                                <label for="scheduled_delivery_enabled" class="ml-2 font-medium">
+                                    Ativar envio automático diário
+                                </label>
+                            </div>
+                            <p class="text-xs text-muted mb-3">
+                                Quando ativado, o sistema enviará automaticamente os banners de futebol no horário especificado
+                            </p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="form-group">
+                                <label for="scheduled_time" class="form-label">
+                                    <i class="fas fa-hourglass-half mr-2"></i>
+                                    Horário de Envio
+                                </label>
+                                <input type="time" id="scheduled_time" name="scheduled_time" class="form-input" 
+                                       value="<?php echo htmlspecialchars($currentSettings['scheduled_time'] ?? '08:00'); ?>">
+                                <p class="text-xs text-muted mt-1">
+                                    Horário em que os banners serão enviados automaticamente (formato 24h)
+                                </p>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="scheduled_football_theme" class="form-label">
+                                    <i class="fas fa-paint-brush mr-2"></i>
+                                    Tema dos Banners
+                                </label>
+                                <select id="scheduled_football_theme" name="scheduled_football_theme" class="form-input form-select">
+                                    <option value="1" <?php echo (!empty($currentSettings) && isset($currentSettings['scheduled_football_theme']) && $currentSettings['scheduled_football_theme'] == 1) ? 'selected' : ''; ?>>
+                                        Tema 1 (Clássico)
+                                    </option>
+                                    <option value="2" <?php echo (!empty($currentSettings) && isset($currentSettings['scheduled_football_theme']) && $currentSettings['scheduled_football_theme'] == 2) ? 'selected' : ''; ?>>
+                                        Tema 2 (Moderno)
+                                    </option>
+                                    <option value="3" <?php echo (!empty($currentSettings) && isset($currentSettings['scheduled_football_theme']) && $currentSettings['scheduled_football_theme'] == 3) ? 'selected' : ''; ?>>
+                                        Tema 3 (Premium)
+                                    </option>
+                                </select>
+                                <p class="text-xs text-muted mt-1">
+                                    Escolha o estilo de banner que será enviado automaticamente
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-primary-50 p-4 rounded-lg mt-3">
+                            <div class="flex items-start gap-3">
+                                <i class="fas fa-info-circle text-primary-500 mt-1"></i>
+                                <div>
+                                    <p class="font-medium text-primary-700">Sobre o envio agendado</p>
+                                    <p class="text-sm text-primary-600 mt-1">
+                                        O sistema verificará os jogos do dia e enviará automaticamente os banners no horário especificado.
+                                        Certifique-se de que seu bot tenha permissão para enviar mensagens no chat configurado.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">
@@ -187,6 +269,62 @@ include "includes/header.php";
                 </form>
             </div>
         </div>
+        
+        <!-- Envio Manual de Banners -->
+        <?php if ($hasSettings): ?>
+        <div class="card mt-6">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-paper-plane text-primary-500 mr-2"></i>
+                    Envio Manual de Banners
+                </h3>
+                <p class="card-subtitle">
+                    Envie banners de futebol diretamente para o Telegram
+                </p>
+            </div>
+            <div class="card-body">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="manual-send-card">
+                        <div class="manual-send-icon">
+                            <i class="fas fa-futbol"></i>
+                        </div>
+                        <h4 class="manual-send-title">Tema 1 (Clássico)</h4>
+                        <p class="manual-send-desc">Banner tradicional com layout vertical</p>
+                        <button type="button" class="btn btn-primary w-full mt-3 send-football-btn" data-theme="football_1">
+                            <i class="fas fa-paper-plane"></i>
+                            Enviar Agora
+                        </button>
+                    </div>
+                    
+                    <div class="manual-send-card">
+                        <div class="manual-send-icon">
+                            <i class="fas fa-futbol"></i>
+                        </div>
+                        <h4 class="manual-send-title">Tema 2 (Moderno)</h4>
+                        <p class="manual-send-desc">Banner compacto com layout horizontal</p>
+                        <button type="button" class="btn btn-primary w-full mt-3 send-football-btn" data-theme="football_2">
+                            <i class="fas fa-paper-plane"></i>
+                            Enviar Agora
+                        </button>
+                    </div>
+                    
+                    <div class="manual-send-card">
+                        <div class="manual-send-icon">
+                            <i class="fas fa-futbol"></i>
+                        </div>
+                        <h4 class="manual-send-title">Tema 3 (Premium)</h4>
+                        <p class="manual-send-desc">Banner premium com design especial</p>
+                        <button type="button" class="btn btn-primary w-full mt-3 send-football-btn" data-theme="football_3">
+                            <i class="fas fa-paper-plane"></i>
+                            Enviar Agora
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="sendResult" class="mt-4" style="display: none;"></div>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <!-- Painel de Informações -->
@@ -216,6 +354,18 @@ include "includes/header.php";
                     <p class="text-sm font-medium mb-2">Última atualização:</p>
                     <p class="text-xs text-muted">
                         <?php echo date('d/m/Y H:i', strtotime($currentSettings['updated_at'])); ?>
+                    </p>
+                </div>
+                
+                <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+                    <p class="text-sm font-medium mb-2">Envio Agendado:</p>
+                    <p class="text-xs">
+                        <span class="status-badge <?php echo (!empty($currentSettings) && isset($currentSettings['scheduled_delivery_enabled']) && $currentSettings['scheduled_delivery_enabled']) ? 'status-active' : 'status-inactive'; ?>">
+                            <?php echo (!empty($currentSettings) && isset($currentSettings['scheduled_delivery_enabled']) && $currentSettings['scheduled_delivery_enabled']) ? 'Ativado' : 'Desativado'; ?>
+                        </span>
+                        <?php if (!empty($currentSettings) && isset($currentSettings['scheduled_delivery_enabled']) && $currentSettings['scheduled_delivery_enabled'] && !empty($currentSettings['scheduled_time'])): ?>
+                            <span class="ml-2">às <?php echo htmlspecialchars($currentSettings['scheduled_time']); ?></span>
+                        <?php endif; ?>
                     </p>
                 </div>
                 <?php endif; ?>
@@ -387,6 +537,24 @@ include "includes/header.php";
         background: var(--warning-50);
         color: var(--warning-600);
     }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .status-active {
+        background: var(--success-50);
+        color: var(--success-600);
+    }
+    
+    .status-inactive {
+        background: var(--danger-50);
+        color: var(--danger-600);
+    }
 
     .step-item {
         display: flex;
@@ -440,6 +608,102 @@ include "includes/header.php";
         display: inline-block;
         text-align: center;
     }
+    
+    .manual-send-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        text-align: center;
+        transition: var(--transition);
+    }
+    
+    .manual-send-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--primary-300);
+    }
+    
+    .manual-send-icon {
+        width: 60px;
+        height: 60px;
+        background: var(--primary-50);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        font-size: 1.5rem;
+        color: var(--primary-500);
+    }
+    
+    .manual-send-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    
+    .manual-send-desc {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+    }
+    
+    .form-checkbox {
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 0.25rem;
+        border: 2px solid var(--border-color);
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        background-color: var(--bg-primary);
+        cursor: pointer;
+        position: relative;
+        transition: var(--transition);
+    }
+    
+    .form-checkbox:checked {
+        background-color: var(--primary-500);
+        border-color: var(--primary-500);
+    }
+    
+    .form-checkbox:checked::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(45deg);
+        width: 0.25rem;
+        height: 0.5rem;
+        border: solid white;
+        border-width: 0 2px 2px 0;
+    }
+    
+    .form-checkbox:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+    }
+    
+    .ml-2 {
+        margin-left: 0.5rem;
+    }
+    
+    .ml-3 {
+        margin-left: 0.75rem;
+    }
+    
+    .bg-primary-50 {
+        background-color: var(--primary-50);
+    }
+    
+    .text-primary-600 {
+        color: var(--primary-600);
+    }
+    
+    .text-primary-700 {
+        color: var(--primary-700);
+    }
 
     .space-y-3 > * + * {
         margin-top: 0.75rem;
@@ -457,12 +721,28 @@ include "includes/header.php";
         margin-top: 0.5rem;
     }
 
+    .mt-3 {
+        margin-top: 0.75rem;
+    }
+
     .mt-4 {
         margin-top: 1rem;
     }
 
+    .mt-6 {
+        margin-top: 1.5rem;
+    }
+
     .mb-2 {
         margin-bottom: 0.5rem;
+    }
+
+    .mb-3 {
+        margin-bottom: 0.75rem;
+    }
+
+    .mb-4 {
+        margin-bottom: 1rem;
     }
 
     .mb-6 {
@@ -476,6 +756,10 @@ include "includes/header.php";
     .p-3 {
         padding: 0.75rem;
     }
+    
+    .p-4 {
+        padding: 1rem;
+    }
 
     .bg-gray-50 {
         background-color: var(--bg-tertiary);
@@ -483,6 +767,10 @@ include "includes/header.php";
 
     .rounded-lg {
         border-radius: var(--border-radius);
+    }
+    
+    .w-full {
+        width: 100%;
     }
 
     /* Dark theme adjustments */
@@ -514,6 +802,32 @@ include "includes/header.php";
         background: var(--bg-secondary);
         color: var(--primary-400);
     }
+    
+    [data-theme="dark"] .manual-send-icon {
+        background: rgba(59, 130, 246, 0.1);
+    }
+    
+    [data-theme="dark"] .bg-primary-50 {
+        background: rgba(59, 130, 246, 0.1);
+    }
+    
+    [data-theme="dark"] .text-primary-600 {
+        color: var(--primary-400);
+    }
+    
+    [data-theme="dark"] .text-primary-700 {
+        color: var(--primary-300);
+    }
+    
+    [data-theme="dark"] .status-active {
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--success-400);
+    }
+    
+    [data-theme="dark"] .status-inactive {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger-400);
+    }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -525,6 +839,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const deleteBtn = document.getElementById('deleteBtn');
     const botTokenInput = document.getElementById('bot_token');
     const chatIdInput = document.getElementById('chat_id');
+    const scheduledEnabledCheckbox = document.getElementById('scheduled_delivery_enabled');
 
     // Testar Bot
     testBotBtn.addEventListener('click', function() {
@@ -662,6 +977,74 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+    
+    // Envio manual de banners de futebol
+    const sendFootballBtns = document.querySelectorAll('.send-football-btn');
+    if (sendFootballBtns.length > 0) {
+        sendFootballBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const bannerType = this.getAttribute('data-theme');
+                
+                // Desabilitar todos os botões
+                sendFootballBtns.forEach(b => {
+                    b.disabled = true;
+                    b.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+                });
+                
+                // Mostrar área de resultado
+                const resultArea = document.getElementById('sendResult');
+                resultArea.style.display = 'block';
+                resultArea.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Gerando e enviando banners para o Telegram...
+                    </div>
+                `;
+                
+                // Enviar requisição
+                fetch('send_telegram_banners.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `banner_type=${encodeURIComponent(bannerType)}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        resultArea.innerHTML = `
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle"></i>
+                                ${data.message}
+                            </div>
+                        `;
+                    } else {
+                        resultArea.innerHTML = `
+                            <div class="alert alert-error">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                ${data.message}
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    resultArea.innerHTML = `
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Erro na conexão: ${error.message}
+                        </div>
+                    `;
+                })
+                .finally(() => {
+                    // Reabilitar todos os botões
+                    sendFootballBtns.forEach(b => {
+                        b.disabled = false;
+                        b.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar Agora';
+                    });
+                });
+            });
+        });
+    }
 
     function showAlert(type, message) {
         Swal.fire({
@@ -672,6 +1055,25 @@ document.addEventListener('DOMContentLoaded', function() {
             color: document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b',
             confirmButtonColor: type === 'success' ? '#22c55e' : '#ef4444'
         });
+    }
+    
+    // Atualizar UI quando o checkbox de agendamento é alterado
+    if (scheduledEnabledCheckbox) {
+        scheduledEnabledCheckbox.addEventListener('change', function() {
+            const scheduledTimeInput = document.getElementById('scheduled_time');
+            const scheduledThemeSelect = document.getElementById('scheduled_football_theme');
+            
+            if (this.checked) {
+                scheduledTimeInput.removeAttribute('disabled');
+                scheduledThemeSelect.removeAttribute('disabled');
+            } else {
+                scheduledTimeInput.setAttribute('disabled', 'disabled');
+                scheduledThemeSelect.setAttribute('disabled', 'disabled');
+            }
+        });
+        
+        // Trigger the change event on page load
+        scheduledEnabledCheckbox.dispatchEvent(new Event('change'));
     }
 });
 </script>

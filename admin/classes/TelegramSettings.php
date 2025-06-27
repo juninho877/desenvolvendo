@@ -15,9 +15,12 @@ class TelegramSettings {
      * @param string $chatId ID do chat/grupo do Telegram
      * @param string $footballMessage Mensagem personalizada para banners de futebol
      * @param string $movieSeriesMessage Mensagem personalizada para banners de filmes/séries
+     * @param string $scheduledTime Horário agendado para envio automático (formato HH:MM)
+     * @param int $scheduledFootballTheme Tema de futebol para envio agendado (1, 2 ou 3)
+     * @param bool $scheduledDeliveryEnabled Flag para habilitar/desabilitar envio agendado
      * @return array Resultado da operação
      */
-    public function saveSettings($userId, $botToken, $chatId, $footballMessage = null, $movieSeriesMessage = null) {
+    public function saveSettings($userId, $botToken, $chatId, $footballMessage = null, $movieSeriesMessage = null, $scheduledTime = null, $scheduledFootballTheme = 1, $scheduledDeliveryEnabled = false) {
         try {
             // Validar parâmetros
             if (empty($botToken) || empty($chatId)) {
@@ -34,18 +37,52 @@ class TelegramSettings {
                 return ['success' => false, 'message' => 'Chat ID deve ser um número (positivo para chat privado, negativo para grupos)'];
             }
             
+            // Validar formato do horário agendado (se fornecido)
+            if (!empty($scheduledTime) && !preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', $scheduledTime)) {
+                return ['success' => false, 'message' => 'Formato de horário inválido. Use o formato HH:MM (24h)'];
+            }
+            
+            // Validar tema de futebol
+            if (!in_array($scheduledFootballTheme, [1, 2, 3])) {
+                $scheduledFootballTheme = 1; // Valor padrão se inválido
+            }
+            
+            // Criar tabela se não existir
+            $this->createTelegramSettingsTable();
+            
             $stmt = $this->db->prepare("
-                INSERT INTO user_telegram_settings (user_id, bot_token, chat_id, football_message, movie_series_message) 
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO user_telegram_settings (
+                    user_id, 
+                    bot_token, 
+                    chat_id, 
+                    football_message, 
+                    movie_series_message,
+                    scheduled_time,
+                    scheduled_football_theme,
+                    scheduled_delivery_enabled
+                ) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE 
                 bot_token = VALUES(bot_token), 
                 chat_id = VALUES(chat_id),
                 football_message = VALUES(football_message),
                 movie_series_message = VALUES(movie_series_message),
+                scheduled_time = VALUES(scheduled_time),
+                scheduled_football_theme = VALUES(scheduled_football_theme),
+                scheduled_delivery_enabled = VALUES(scheduled_delivery_enabled),
                 updated_at = CURRENT_TIMESTAMP
             ");
             
-            $stmt->execute([$userId, $botToken, $chatId, $footballMessage, $movieSeriesMessage]);
+            $stmt->execute([
+                $userId, 
+                $botToken, 
+                $chatId, 
+                $footballMessage, 
+                $movieSeriesMessage,
+                $scheduledTime,
+                $scheduledFootballTheme,
+                $scheduledDeliveryEnabled ? 1 : 0
+            ]);
             
             return ['success' => true, 'message' => 'Configurações do Telegram salvas com sucesso'];
         } catch (PDOException $e) {
@@ -61,8 +98,20 @@ class TelegramSettings {
      */
     public function getSettings($userId) {
         try {
+            // Criar tabela se não existir
+            $this->createTelegramSettingsTable();
+            
             $stmt = $this->db->prepare("
-                SELECT bot_token, chat_id, football_message, movie_series_message, created_at, updated_at 
+                SELECT 
+                    bot_token, 
+                    chat_id, 
+                    football_message, 
+                    movie_series_message, 
+                    scheduled_time,
+                    scheduled_football_theme,
+                    scheduled_delivery_enabled,
+                    created_at, 
+                    updated_at 
                 FROM user_telegram_settings 
                 WHERE user_id = ?
             ");
@@ -71,6 +120,37 @@ class TelegramSettings {
         } catch (PDOException $e) {
             error_log("Erro ao buscar configurações do Telegram: " . $e->getMessage());
             return false;
+        }
+    }
+    
+    /**
+     * Verifica se a tabela de configurações do Telegram existe e a cria se necessário
+     */
+    private function createTelegramSettingsTable() {
+        try {
+            $sql = "
+            CREATE TABLE IF NOT EXISTS user_telegram_settings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                bot_token VARCHAR(255) NOT NULL,
+                chat_id VARCHAR(50) NOT NULL,
+                football_message TEXT,
+                movie_series_message TEXT,
+                scheduled_time VARCHAR(5),
+                scheduled_football_theme INT DEFAULT 1,
+                scheduled_delivery_enabled TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_user_telegram (user_id),
+                FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+                INDEX idx_user_telegram (user_id),
+                INDEX idx_scheduled_delivery (scheduled_delivery_enabled, scheduled_time)
+            );
+            ";
+            
+            $this->db->exec($sql);
+        } catch (PDOException $e) {
+            error_log("Erro ao criar tabela de configurações do Telegram: " . $e->getMessage());
         }
     }
     
@@ -269,7 +349,8 @@ class TelegramSettings {
             $stmt = $this->db->prepare("
                 SELECT 
                     COUNT(*) as total_users_configured,
-                    COUNT(CASE WHEN updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as active_last_30_days
+                    COUNT(CASE WHEN updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as active_last_30_days,
+                    COUNT(CASE WHEN scheduled_delivery_enabled = 1 THEN 1 END) as scheduled_delivery_users
                 FROM user_telegram_settings
             ");
             $stmt->execute();
@@ -277,14 +358,67 @@ class TelegramSettings {
             
             return $stats ?: [
                 'total_users_configured' => 0,
-                'active_last_30_days' => 0
+                'active_last_30_days' => 0,
+                'scheduled_delivery_users' => 0
             ];
         } catch (PDOException $e) {
             error_log("Erro ao obter estatísticas do Telegram: " . $e->getMessage());
             return [
                 'total_users_configured' => 0,
-                'active_last_30_days' => 0
+                'active_last_30_days' => 0,
+                'scheduled_delivery_users' => 0
             ];
+        }
+    }
+    
+    /**
+     * Obter usuários com envio agendado para um determinado horário
+     * @param string $time Horário no formato HH:MM
+     * @return array Lista de usuários com envio agendado
+     */
+    public function getUsersWithScheduledDelivery($time) {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    user_id,
+                    bot_token,
+                    chat_id,
+                    football_message,
+                    scheduled_football_theme
+                FROM user_telegram_settings 
+                WHERE scheduled_delivery_enabled = 1 
+                AND scheduled_time = ?
+            ");
+            $stmt->execute([$time]);
+            return $stmt->fetchAll();
+        } catch (PDOException $e) {
+            error_log("Erro ao buscar usuários com envio agendado: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Atualizar status de envio agendado
+     * @param int $userId ID do usuário
+     * @param bool $enabled Status de habilitado/desabilitado
+     * @return array Resultado da operação
+     */
+    public function updateScheduledDeliveryStatus($userId, $enabled) {
+        try {
+            $stmt = $this->db->prepare("
+                UPDATE user_telegram_settings 
+                SET scheduled_delivery_enabled = ? 
+                WHERE user_id = ?
+            ");
+            $stmt->execute([$enabled ? 1 : 0, $userId]);
+            
+            return [
+                'success' => true, 
+                'message' => 'Status de envio agendado ' . ($enabled ? 'ativado' : 'desativado') . ' com sucesso'
+            ];
+        } catch (PDOException $e) {
+            error_log("Erro ao atualizar status de envio agendado: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Erro ao atualizar status: ' . $e->getMessage()];
         }
     }
 }
